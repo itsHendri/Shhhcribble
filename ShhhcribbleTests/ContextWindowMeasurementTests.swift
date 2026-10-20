@@ -68,12 +68,15 @@ final class ContextWindowMeasurementTests: XCTestCase {
     }
 
     private func skipUnlessEnabled() throws {
-        // Gated on a FILE, not an environment variable. Measured 2026-10-20 on
-        // Xcode 26.6: `xcodebuild test TEST_RUNNER_FOO=1` does NOT reach the test
-        // process under either spelling — command-line `KEY=value` pairs become
-        // *build settings*; the TEST_RUNNER_ prefix convention only applies to
-        // env vars set in the scheme. The test then skips, and a skip reads
-        // exactly like a pass in the summary line. A file cannot fail that way.
+        // Gated on a FILE as well as the env vars, and the reason is a mistake
+        // worth not repeating. `TEST_RUNNER_FOO=1 xcodebuild test` (shell
+        // environment prefix) WORKS and is what Testing/prompts/README.md
+        // documents — xcodebuild forwards TEST_RUNNER_-prefixed env vars to the
+        // test runner with the prefix stripped. `xcodebuild test TEST_RUNNER_FOO=1`
+        // (argument after the subcommand) does NOT: command-line KEY=value pairs
+        // become build settings and are discarded. The two look nearly identical
+        // and only one works; getting it wrong skips the test, and a skip reads
+        // exactly like a pass. The file sentinel is belt-and-braces.
         let env = ProcessInfo.processInfo.environment
         let sentinel = "/tmp/shhhcribble-measure-context"
         guard env["SHHHCRIBBLE_MEASURE_CONTEXT"] != nil
