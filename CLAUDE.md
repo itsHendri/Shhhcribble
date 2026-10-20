@@ -524,6 +524,21 @@ Section headers already name each setting; inline `Picker("Model", ...)` labels 
 
 **⚠ MEASURED 2026-10-20: the usable ceiling is ~18,000 characters of transcript**, through the real prompt path (`transformInstructions` + `PromptFence.wrap`, Email style). 18,000 succeeds, 18,375 fails. Harness: `ShhhcribbleTests/ContextWindowMeasurementTests`, gated on `touch /tmp/shhhcribble-measure-context`.
 
+**⚠ SUMMARIZER CEILING, re-measured 2026-10-20 on macOS 26.6.2: 624 words OK (8,578 ms), 728 words FAILED (36,047 ms).** ~4.2 minutes of speech. Narrows the harness's own stale 416–832 range. **A 60-minute call is ~9,000 words — roughly 14× over.**
+
+**The two paths fail in opposite ways, and that decides which fix goes where:**
+
+| | transform (`TranscriptCleaner.transform`) | summary (`TranscriptSummarizer`) |
+|---|---|---|
+| Ceiling | ~18,000 chars | ~624 words (~3,700 chars) |
+| Over-ceiling failure | **fast** — under 1 s | **slow — 36 s** |
+| Slowest *success* | ~6 s at 18,000 chars | **8.58 s at 624 words** |
+
+- **An input-length pre-check is worth little on transform and worth 36 seconds on summaries.** A 2026-10-20 note claiming it "buys almost nothing" was measured on the transform path only and does not generalise. This is where it pays.
+- **Do NOT set a timeout at 8 s.** A *successful* summary at the ceiling takes 8.58 s, so an 8 s cap truncates correct work at exactly the lengths that matter. If summaries ever get a cap at all it must sit well above that — and CLAUDE.md's existing reasoning says they shouldn't have one (on-demand, user watching, no fallback to degrade to).
+- **Latency climbs steeply near the ceiling** — 2.8 s at 416 words, 8.6 s at 624. Budget for the knee, not the median.
+- **Chunking is unavoidable for long calls** at 14× over. The harness's own recommendation: map-reduce per window, reducing only the prose and never the action items — which preserves `SummaryGuard`'s per-item citation, since each item keeps the window it was extracted from.
+
 **⚠ A duplicate, and the less useful one.** `PromptBenchTests.testMeasureContextCeiling` already measured this through **`TranscriptSummarizer`** with realistic two-party call transcripts, and its own comment records an earlier run breaking between **416 and 832 words** (~2,500–5,000 chars) — far below the 18,000 measured on the *transform* path. Different paths, genuinely different ceilings, and **the summarizer one is the number that matters for long-call summaries.** Prefer it; re-run it before scoping chunking.
 
 **⚠ `TEST_RUNNER_FOO=1 xcodebuild test` works; `xcodebuild test TEST_RUNNER_FOO=1` does not.** The first is a shell environment prefix, which xcodebuild forwards to the test runner with the prefix stripped — this is what `Testing/prompts/README.md` documents and it is correct. The second is an argument after the subcommand, which becomes a *build setting* and is silently discarded. Verified 2026-10-20 by running `testRunRealCorpus` both ways: the README form passed in 70 s and wrote its report; the argument form skipped. **The bench is not silently skipping** — a 2026-10-20 scare to the contrary was this mistake, not a defect. That retires the unmeasured 4k–8k-token guess the docs carried since 2026-08-11.
