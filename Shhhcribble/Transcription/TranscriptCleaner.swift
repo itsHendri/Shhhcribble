@@ -30,8 +30,11 @@ import FoundationModels
 /// silently and asynchronously — the "Copied!" pill closes at hotkey release — a
 /// slow cleanup delays only *when* text appears in the field, not the UI. The one
 /// cost: while cleanup runs the app is busy and won't start a new recording, so a
-/// very slow cleanup defers the next dictation. Reintroduce a cap (see git history
-/// for the `withTimeout` helper) if paste ever feels laggy.
+/// very slow cleanup defers the next dictation. Reintroduce a cap if paste ever
+/// feels laggy — but note the helper is NOT in git history, despite what this
+/// comment said until 2026-10-20. Every `withTimeout` occurrence in this repo's
+/// history is prose, including this line; the helper lived in the uncommitted
+/// Phase-0 prototype and has to be re-derived (~15 lines, withThrowingTaskGroup).
 enum TranscriptCleaner {
 
     private static let log = Logger(subsystem: "com.shhhcribble.app", category: "cleanup")

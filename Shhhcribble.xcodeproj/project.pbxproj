@@ -43,6 +43,7 @@
 		CF000055000000000000001A /* FillerWordFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF000054000000000000001A /* FillerWordFilter.swift */; };
 		CF0000E5000000000000001A /* PromptFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000E4000000000000001A /* PromptFence.swift */; };
 		CF0000E7000000000000001A /* PromptFenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000E6000000000000001A /* PromptFenceTests.swift */; };
+		CF0000AA000000000000002B /* ContextWindowMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000AB000000000000002B /* ContextWindowMeasurementTests.swift */; };
 		CF0000E9000000000000001A /* FeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000E8000000000000001A /* FeedbackView.swift */; };
 		CF0000ED000000000000001A /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000EC000000000000001A /* DesignSystem.swift */; };
 		CF0000EB000000000000001A /* FeedbackReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000EA000000000000001A /* FeedbackReportTests.swift */; };
@@ -128,6 +129,7 @@
 		CF000054000000000000001A /* FillerWordFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillerWordFilter.swift; sourceTree = "<group>"; };
 		CF0000E4000000000000001A /* PromptFence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptFence.swift; sourceTree = "<group>"; };
 		CF0000E6000000000000001A /* PromptFenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptFenceTests.swift; sourceTree = "<group>"; };
+		CF0000AB000000000000002B /* ContextWindowMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowMeasurementTests.swift; sourceTree = "<group>"; };
 		CF0000E8000000000000001A /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
 		CF0000EC000000000000001A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		CF0000EA000000000000001A /* FeedbackReportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackReportTests.swift; sourceTree = "<group>"; };
@@ -243,6 +245,7 @@
 				CF000117000000000000001A /* RichTextTests.swift */,
 				CF0000E0000000000000001A /* TranscriptSummarizerTests.swift */,
 				CF0000E6000000000000001A /* PromptFenceTests.swift */,
+				CF0000AB000000000000002B /* ContextWindowMeasurementTests.swift */,
 				CF0000EA000000000000001A /* FeedbackReportTests.swift */,
 			);
 			path = ShhhcribbleTests;
@@ -530,6 +533,7 @@
 				CF000118000000000000001A /* RichTextTests.swift in Sources */,
 				CF0000E1000000000000001A /* TranscriptSummarizerTests.swift in Sources */,
 				CF0000E7000000000000001A /* PromptFenceTests.swift in Sources */,
+				CF0000AA000000000000002B /* ContextWindowMeasurementTests.swift in Sources */,
 				CF0000EB000000000000001A /* FeedbackReportTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
