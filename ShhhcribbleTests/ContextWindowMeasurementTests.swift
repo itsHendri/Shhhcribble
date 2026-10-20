@@ -142,10 +142,30 @@ final class ContextWindowMeasurementTests: XCTestCase {
         print("  [longcall] \(words) words → \(windows) windows")
         XCTAssertGreaterThan(words, 700, "probe must exceed the measured single-pass ceiling")
 
+        // Record every progress event so the indicator can be asserted, not
+        // just eyeballed. A lock because the callback is explicitly documented
+        // as arriving from any thread.
+        let lock = NSLock()
+        nonisolated(unsafe) var events: [TranscriptSummarizer.Progress] = []
+
         let clock = ContinuousClock()
         let start = clock.now
-        let result = await TranscriptSummarizer.summarize(transcript)
+        let result = await TranscriptSummarizer.summarize(transcript) { p in
+            lock.lock(); events.append(p); lock.unlock()
+        }
         let secs = Int((clock.now - start).components.seconds)
+
+        lock.lock(); let seen = events; lock.unlock()
+        print("  [longcall] \(seen.count) progress events")
+        // The indicator must count every window and then say it is combining —
+        // without the combining event it would sit at "N of N" for the ~87 s
+        // the reduce takes, which reads as a hang.
+        let sections = seen.compactMap { if case .section(let i, let t) = $0 { return (i, t) } else { return nil } }
+        XCTAssertEqual(sections.count, windows, "one progress event per window")
+        XCTAssertEqual(sections.map(\.0), Array(1...windows), "sections must be reported in order, 1-based")
+        XCTAssertTrue(sections.allSatisfy { $0.1 == windows }, "every event must carry the same total")
+        XCTAssertTrue(seen.contains(.combining), "the reduce phase must be reported")
+        XCTAssertEqual(seen.last, .combining, "combining is the final phase")
         print("  [longcall] summarize → \(result == nil ? "nil" : "ok") in \(secs)s")
 
         let r = try XCTUnwrap(result, "a \(words)-word call must summarize via chunking")

@@ -103,6 +103,20 @@ enum TranscriptSummarizer {
         let actionItems: [ActionItem]
     }
 
+    /// What the chunked path is doing, for a caller that wants to show it.
+    ///
+    /// **`combining` is not cosmetic.** Reducing the window summaries took ~87 s
+    /// of the 157 s measured on an 8,840-word call, so a progress indicator that
+    /// only counted windows would reach "25 of 25" and then sit apparently
+    /// frozen for a minute and a half — worse than no indicator, because it
+    /// looks like a hang rather than work.
+    enum Progress: Equatable, Sendable {
+        /// Summarising window `index` (1-based) of `total`.
+        case section(index: Int, total: Int)
+        /// Windows are done; collapsing their summaries into one.
+        case combining
+    }
+
     // MARK: - Availability
 
     enum Availability: Equatable {
@@ -150,7 +164,13 @@ enum TranscriptSummarizer {
     /// Returns the summary + action items, or `nil` when summarization is
     /// unavailable, fails, or produces an empty summary — the Summary tab surfaces
     /// a retry in every `nil` case. Never throws; never logs transcript content.
-    static func summarize(_ text: String) async -> Result? {
+    /// `onProgress` is called only on the chunked path — a single-pass summary
+    /// is a few seconds and has nothing worth reporting. It may be called from
+    /// any thread; hop to the main actor in the closure if it drives UI.
+    static func summarize(
+        _ text: String,
+        onProgress: (@Sendable (Progress) -> Void)? = nil
+    ) async -> Result? {
         guard availability.isAvailable else { return nil }
 
         // Above the single-pass limit, go map-reduce. This is a hard
@@ -159,7 +179,7 @@ enum TranscriptSummarizer {
         // roughly 14x over. Without this the Summary tab spins for half a
         // minute and then offers a retry that cannot succeed either.
         if TranscriptChunker.wordCount(text) > TranscriptChunker.singlePassWordLimit {
-            return await summarizeLong(text)
+            return await summarizeLong(text, onProgress: onProgress)
         }
         return await summarizeWindow(text, citingAgainst: text)
     }
@@ -173,7 +193,10 @@ enum TranscriptSummarizer {
     /// the citation check exists to catch. So items pass through verbatim from
     /// the window that produced them, re-checked against the *full* transcript.
     /// Only the prose is reduced.
-    private static func summarizeLong(_ text: String) async -> Result? {
+    private static func summarizeLong(
+        _ text: String,
+        onProgress: (@Sendable (Progress) -> Void)? = nil
+    ) async -> Result? {
         let windows = TranscriptChunker.windows(of: text)
         guard !windows.isEmpty else { return nil }
         Self.log.notice("Long summary: \(windows.count) windows")
@@ -183,6 +206,7 @@ enum TranscriptSummarizer {
         var failed = 0
 
         for (i, window) in windows.enumerated() {
+            onProgress?(.section(index: i + 1, total: windows.count))
             // Cite against the FULL transcript, not the window: a quote is
             // evidence about the call, and the window is just how we fed it in.
             guard let part = await summarizeWindow(window, citingAgainst: text) else {
@@ -205,6 +229,7 @@ enum TranscriptSummarizer {
             Self.log.error("Long summary: \(failed) of \(windows.count) windows failed; summarising the rest")
         }
 
+        onProgress?(.combining)
         let reduced = await reduceProse(prose, citingAgainst: text)
         return Result(summary: reduced, actionItems: dedupe(items))
     }

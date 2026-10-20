@@ -18,6 +18,8 @@ struct TranscriptDetail: View {
     @State private var tab: Tab = .transcript
     @State private var showingDeleteConfirm = false
     @State private var isSummarizing = false
+    /// Non-nil only while a long transcript is being summarized in sections.
+    @State private var summaryProgress: TranscriptSummarizer.Progress?
     @State private var summaryError: String?
     @State private var didPrewarm = false
     /// Notes became their own module 2026-07-23 — a transcript is a record of
@@ -133,8 +135,24 @@ struct TranscriptDetail: View {
             .padding(24)
         } else if isSummarizing {
             VStack(spacing: 12) {
-                ProgressView()
-                Text("Summarizing…").font(.callout).foregroundStyle(.secondary)
+                // A long call takes minutes, so the bar is determinate where we
+                // genuinely know the fraction and indeterminate where we don't —
+                // a fake bar during the combine step would be a lie about
+                // progress we can't actually measure.
+                switch summaryProgress {
+                case .section(let index, let total):
+                    ProgressView(value: Double(index), total: Double(total))
+                        .frame(maxWidth: 220)
+                    Text("Summarizing section \(index) of \(total)…")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .monospacedDigit()
+                case .combining:
+                    ProgressView()
+                    Text("Combining sections…").font(.callout).foregroundStyle(.secondary)
+                case nil:
+                    ProgressView()
+                    Text("Summarizing…").font(.callout).foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let summary = transcript.summary {
@@ -301,10 +319,16 @@ struct TranscriptDetail: View {
         guard !text.isEmpty, !isSummarizing else { return }
         let id = transcript.id
         isSummarizing = true
+        summaryProgress = nil
         summaryError = nil
         Task {
-            defer { isSummarizing = false }
-            if let result = await TranscriptSummarizer.summarize(text) {
+            defer { isSummarizing = false; summaryProgress = nil }
+            // The callback can arrive on any thread; @State must be written on
+            // the main actor.
+            let result = await TranscriptSummarizer.summarize(text) { progress in
+                Task { @MainActor in summaryProgress = progress }
+            }
+            if let result {
                 store.updateSummary(id: id, summary: result.summary, actionItems: result.actionItems)
             } else {
                 summaryError = "Couldn’t generate a summary. Please try again."

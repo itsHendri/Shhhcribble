@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   either — the on-device model simply couldn't take that much text at once.
   Long transcripts are now summarised in sections and the results combined, so
   an hour-long call produces a summary like any other. It takes a couple of
-  minutes for a call that length.
+  minutes for a call that length, and the Summary tab now says which section
+  it's on rather than showing a spinner that looks stuck.
 
 
 ## [1.15.1] - 2026-09-06
