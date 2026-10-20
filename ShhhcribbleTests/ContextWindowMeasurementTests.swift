@@ -117,6 +117,50 @@ final class ContextWindowMeasurementTests: XCTestCase {
         return (false, 0, "FoundationModels unavailable")
     }
 
+    /// End-to-end proof that the chunked path summarizes a transcript which the
+    /// single-pass path cannot. Opt-in and slow for the same reasons as the
+    /// ceiling run: `touch /tmp/shhhcribble-measure-context`.
+    ///
+    /// Reports rather than asserts quality, but DOES assert the two things that
+    /// are objectively checkable: a long call produces a summary at all, and
+    /// every surviving action item still cites the transcript.
+    func testLongCallSummarizesViaChunking() async throws {
+        try skipUnlessEnabled()
+
+        let turn = """
+        Me: Okay so the next thing on the list is the migration, and I think we should \
+        run it against a copy of the production data before we commit to a date.
+
+        Others: That makes sense. I'll get you a snapshot by Wednesday so you can \
+        test it properly rather than guessing.
+
+        """
+        // ~60 minutes of speech: the case the feature exists for.
+        let transcript = String(repeating: turn, count: 170)
+        let words = TranscriptChunker.wordCount(transcript)
+        let windows = TranscriptChunker.windows(of: transcript).count
+        print("  [longcall] \(words) words → \(windows) windows")
+        XCTAssertGreaterThan(words, 700, "probe must exceed the measured single-pass ceiling")
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let result = await TranscriptSummarizer.summarize(transcript)
+        let secs = Int((clock.now - start).components.seconds)
+        print("  [longcall] summarize → \(result == nil ? "nil" : "ok") in \(secs)s")
+
+        let r = try XCTUnwrap(result, "a \(words)-word call must summarize via chunking")
+        print("  [longcall] summary (\(TranscriptChunker.wordCount(r.summary)) words): \(r.summary.prefix(300))")
+        print("  [longcall] \(r.actionItems.count) action items")
+        for item in r.actionItems.prefix(5) {
+            print("    • [\(item.owner.rawValue)] \(item.text) — quote: \(item.quote.prefix(70))")
+        }
+        XCTAssertFalse(r.summary.isEmpty, "chunked summary came back empty")
+        for item in r.actionItems {
+            XCTAssertTrue(SummaryGuard.isCited(quote: item.quote, in: transcript),
+                          "an action item survived without citing the transcript")
+        }
+    }
+
     func testMeasureContextCeiling() async throws {
         try skipUnlessEnabled()
 

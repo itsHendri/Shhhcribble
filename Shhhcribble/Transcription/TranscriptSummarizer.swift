@@ -153,6 +153,117 @@ enum TranscriptSummarizer {
     static func summarize(_ text: String) async -> Result? {
         guard availability.isAvailable else { return nil }
 
+        // Above the single-pass limit, go map-reduce. This is a hard
+        // requirement, not an optimisation: measured 2026-10-20, 728 words
+        // FAILS after 36 seconds, and an hour-long call is ~9,000 words —
+        // roughly 14x over. Without this the Summary tab spins for half a
+        // minute and then offers a retry that cannot succeed either.
+        if TranscriptChunker.wordCount(text) > TranscriptChunker.singlePassWordLimit {
+            return await summarizeLong(text)
+        }
+        return await summarizeWindow(text, citingAgainst: text)
+    }
+
+    /// Map-reduce for transcripts past the single-pass limit.
+    ///
+    /// **Action items are mapped but never reduced**, and that is the load-bearing
+    /// part. Each item carries a verbatim `quote` that `SummaryGuard.isCited`
+    /// checks; feeding items back through the model to merge them would let it
+    /// rewrite quotes, and a rewritten quote is exactly the fabricated evidence
+    /// the citation check exists to catch. So items pass through verbatim from
+    /// the window that produced them, re-checked against the *full* transcript.
+    /// Only the prose is reduced.
+    private static func summarizeLong(_ text: String) async -> Result? {
+        let windows = TranscriptChunker.windows(of: text)
+        guard !windows.isEmpty else { return nil }
+        Self.log.notice("Long summary: \(windows.count) windows")
+
+        var prose: [String] = []
+        var items: [ActionItem] = []
+        var failed = 0
+
+        for (i, window) in windows.enumerated() {
+            // Cite against the FULL transcript, not the window: a quote is
+            // evidence about the call, and the window is just how we fed it in.
+            guard let part = await summarizeWindow(window, citingAgainst: text) else {
+                failed += 1
+                Self.log.error("Long summary: window \(i + 1)/\(windows.count) failed")
+                continue
+            }
+            prose.append(part.summary)
+            items.append(contentsOf: part.actionItems)
+        }
+
+        // One bad window costs its own content, not the whole call — the reason
+        // windowing bounds the blast radius at all. Everything failing is a real
+        // failure, so the tab offers a retry rather than an empty summary.
+        guard !prose.isEmpty else {
+            Self.log.error("Long summary: every one of \(windows.count) windows failed")
+            return nil
+        }
+        if failed > 0 {
+            Self.log.error("Long summary: \(failed) of \(windows.count) windows failed; summarising the rest")
+        }
+
+        let reduced = await reduceProse(prose, citingAgainst: text)
+        return Result(summary: reduced, actionItems: dedupe(items))
+    }
+
+    /// Collapse per-window summaries into one.
+    ///
+    /// The joined prose can itself exceed the ceiling — 23 windows at ~40 words
+    /// each is ~920, past the 624 limit — so this reduces in passes until it
+    /// fits, then makes a final summarising pass. Bounded by `maxReducePasses`
+    /// because a pass that fails to shrink its input would otherwise loop.
+    private static func reduceProse(_ parts: [String], citingAgainst full: String) async -> String {
+        let maxReducePasses = 4
+        var current = parts
+
+        for pass in 0 ..< maxReducePasses {
+            let joined = current.joined(separator: "\n\n")
+            if TranscriptChunker.wordCount(joined) <= TranscriptChunker.singlePassWordLimit {
+                // Fits: one last pass turns N window summaries into one summary.
+                if current.count == 1 { return current[0] }
+                if let final = await summarizeWindow(joined, citingAgainst: full) {
+                    return final.summary
+                }
+                // The model declined to reduce; the joined windows are still a
+                // true account of the call, just longer than ideal. Better than
+                // nothing, and never fabricated.
+                return joined
+            }
+            let groups = TranscriptChunker.windows(of: joined)
+            guard groups.count < current.count || pass == 0 else { break }
+            var next: [String] = []
+            for g in groups {
+                if let r = await summarizeWindow(g, citingAgainst: full) { next.append(r.summary) }
+            }
+            guard !next.isEmpty else { break }
+            current = next
+        }
+        return current.joined(separator: "\n\n")
+    }
+
+    /// Drop items whose text repeats one already kept. The same commitment
+    /// restated in two windows is one commitment; comparison is on normalised
+    /// text so punctuation and casing don't produce near-duplicates. The *first*
+    /// occurrence is kept, with its own quote, so citation is unaffected.
+    private static func dedupe(_ items: [ActionItem]) -> [ActionItem] {
+        var seen = Set<String>()
+        return items.filter { item in
+            let key = item.text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            return seen.insert(key).inserted
+        }
+    }
+
+    /// One model pass over one window. `citingAgainst` is the text every action
+    /// item's quote is checked against — the full transcript, even when the
+    /// window is a slice of it.
+    private static func summarizeWindow(_ text: String, citingAgainst full: String) async -> Result? {
+
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
             let clock = ContinuousClock()
@@ -173,7 +284,7 @@ enum TranscriptSummarizer {
                 }
                 // The prose has no quote to check, so it only has to look
                 // derived from the transcript rather than invented wholesale.
-                guard SummaryGuard.isPlausibleSummary(summary, from: text) else {
+                guard SummaryGuard.isPlausibleSummary(summary, from: full) else {
                     Self.log.error("Summary rejected by guard in \(ms) ms (not derived from the transcript)")
                     return nil
                 }
@@ -186,7 +297,7 @@ enum TranscriptSummarizer {
                     let task = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     let quote = item.quote.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !task.isEmpty else { return nil }
-                    guard SummaryGuard.isCited(quote: quote, in: text) else { return nil }
+                    guard SummaryGuard.isCited(quote: quote, in: full) else { return nil }
                     return ActionItem(text: task, owner: item.owner.resolved, quote: quote)
                 }
                 let dropped = generated.count - items.count

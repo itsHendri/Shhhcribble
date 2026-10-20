@@ -611,6 +611,20 @@ What it *does* assert is only the objectively checkable: injection probes stay r
 - **Single current summary + timestamp; full versioning deferred.** One summary per transcript (`summary` / `actionItems` / `summaryGeneratedAt`); Regenerate overwrites. The timestamp column + raw-vs-cleaned split are the groundwork for multi-version summaries later (Granola insight).
 - **Did NOT touch `AudioRecorder` / routing / `MusicPauser` / `TextInserter`** — this is a read-only Studio feature, so **no AirPods+Spotify smoke test is triggered**. The dropped "Paste into focused app" affordance stays deferred (its window-frontmost caveat needs prior-app plumbing — its own task).
 
+### Long-call summaries are map-reduced — items mapped, never reduced (2026-10-20)
+
+[Transcription/TranscriptChunker.swift](Shhhcribble/Transcription/TranscriptChunker.swift) + the chunked path in `TranscriptSummarizer`. Closes the long-call summary bug documented since 2026-08-11. **Verified end-to-end against the real model: 8,840 words → 25 windows → a summary and 3 cited action items in 157 s.**
+
+- **Window size is 400 words, chosen for the LATENCY KNEE, not the ceiling — and smaller is faster.** Measured: 416 words costs 2.8 s, 624 costs 8.6 s, 728 fails after 36 s. Per-window cost grows super-linearly while window count grows linearly, so for a 9,000-word call 400×23 ≈ 64 s beats 624×15 ≈ 129 s. **Raising the window size makes long calls slower, not faster.** `singlePassWordLimit` is 450 — chunking is already the faster route well before it becomes the only one.
+- **Action items are mapped and NEVER reduced.** Each carries a verbatim `quote` that `SummaryGuard.isCited` checks. Passing items back through the model to merge them would let it rewrite quotes, and a rewritten quote is precisely the fabricated evidence the citation check exists to catch. Items pass through from the window that produced them; only the prose is reduced. **Don't "tidy" the item list through the model.**
+- **Citation is checked against the FULL transcript, never the window.** A quote is evidence about the call; the window is only how it was fed in.
+- **Windows break on turn boundaries.** Splitting mid-turn strands an item's evidence across two windows, which `isCited` then correctly rejects — the feature would quietly lose action items.
+- **The reduce step chunks itself.** 25 window summaries is ~750 words, over the ceiling; it reduces in bounded passes (`maxReducePasses` 4) until it fits. The bound exists because a pass that fails to shrink its input would otherwise loop forever.
+- **One failed window costs its own content, not the call.** All windows failing returns `nil` so the tab offers a retry; a partial failure is logged and summarises the rest.
+- **Pure logic is pinned by `TranscriptChunkerTests`** (9 tests), the load-bearing one being that **no window may ever exceed the budget** across five shapes — a window that does lands on the 36-second failure.
+
+**⚠ OPEN — the Summary tab has no progress indication, and 157 s of undifferentiated spinner is bad.** The measured map phase is ~70 s and the reduce passes cost the rest. `summarizeLong` already knows the window count and index (it logs them); surfacing "section 7 of 25" is a small change and should land before anyone summarises a real hour-long call. Not done here.
+
 ### Editable Notes (Studio Notes tab, auto-save)
 Third detail tab (`Transcript | Summary | Notes`) in [TranscriptionsView.swift](Shhhcribble/UI/TranscriptionsView.swift) `TranscriptDetail`. A plain `TextEditor` bound to `@State notesText`, seeded once from `transcript.notes` in `.onAppear` and persisted via `store.updateNotes(id:notes:)` (mirrors `updateSummary`; UPDATE + in-memory `@Published` mutation).
 
