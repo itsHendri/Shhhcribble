@@ -611,6 +611,21 @@ What it *does* assert is only the objectively checkable: injection probes stay r
 - **Single current summary + timestamp; full versioning deferred.** One summary per transcript (`summary` / `actionItems` / `summaryGeneratedAt`); Regenerate overwrites. The timestamp column + raw-vs-cleaned split are the groundwork for multi-version summaries later (Granola insight).
 - **Did NOT touch `AudioRecorder` / routing / `MusicPauser` / `TextInserter`** — this is a read-only Studio feature, so **no AirPods+Spotify smoke test is triggered**. The dropped "Paste into focused app" affordance stays deferred (its window-frontmost caveat needs prior-app plumbing — its own task).
 
+### The transcript library has a backup now (2026-10-21)
+
+[Tools/backup-db.sh](Tools/backup-db.sh) + `Tools/com.shhhcribble.backup.plist`, installed as a user LaunchAgent (`com.shhhcribble.backup`, daily 13:00 + `RunAtLoad`). **This is interim, not Phase B** — a local rotated copy, not sync. It exists because the 2026-08-31 wipe took ~1,100 dictations and every note, and the commit immediately before it was *"Raise sync's priority: the data has no backup story at all"*. The risk was identified, written down, ranked, and landed before it was acted on.
+
+- **`sqlite3 .backup`, never `cp`.** The app may be writing. A `cp` of a live SQLite file can capture a torn page and produce a backup that only fails when you try to restore it.
+- **Every backup is verified before it is kept** — `PRAGMA integrity_check` plus a non-zero row count, and the file is deleted if either fails. A zero-row "successful" backup is the silent failure worth catching now rather than on the day it is needed.
+- **⚠ NOT `~/Documents`, `~/Desktop` or `~/Downloads`.** All three are TCC-protected and a LaunchAgent holds no grant. Measured 2026-10-21: the backup wrote but the rotation's `find` was denied, so the job **exited 1 on every run while still appearing to produce files**. The default is `~/Shhhcribble Backups` — the home root is not gated.
+- **⚠ The destination contains a space, which broke the first prune.** `find … | xargs ls -t` split `Shhhcribble Backups` into two arguments, so pruning silently never ran. It is now `ls -t` on the glob, which emits one path per line. **Don't reintroduce xargs here.**
+- **A failed prune must never fail the backup.** Under `set -e` an un-guarded prune turned a *good, verified* backup into a non-zero exit — which is how the TCC problem was found. Pruning is guarded and only warns.
+- **Keeps 14 rotations** (~11 MB at the current 816 KB). One rolling copy cannot survive a corruption you don't notice for a few days.
+- **Restore is a plain file copy** over `~/Library/Application Support/Shhhcribble/transcripts.sqlite` with the app quit. Drill run 2026-10-21: 517 transcripts, 5 styles, 3 dictionary entries, schema v14, integrity ok.
+- **To remove:** `launchctl unload ~/Library/LaunchAgents/com.shhhcribble.backup.plist && rm ~/Library/LaunchAgents/com.shhhcribble.backup.plist`. The agent references the repo path, so **moving or deleting the repo silently breaks it** — check `/tmp/shhhcribble-backup.err` and `launchctl list | grep shhhcribble` (middle column 0 = clean).
+
+**Still local-only, and that is the honest limit.** It protects against a bad migration, app corruption and accidental deletion. It does **not** protect against the failure that actually happened — the machine going away. The one-line iCloud Drive alternative is documented at the top of the script; taking it means the user's own dictation leaves the Mac, which is a real tension with the product's pitch and is the user's call, not a technicality.
+
 ### Long-call summaries are map-reduced — items mapped, never reduced (2026-10-20)
 
 [Transcription/TranscriptChunker.swift](Shhhcribble/Transcription/TranscriptChunker.swift) + the chunked path in `TranscriptSummarizer`. Closes the long-call summary bug documented since 2026-08-11. **Verified end-to-end against the real model: 8,840 words → 25 windows → a summary and 3 cited action items in 157 s.**

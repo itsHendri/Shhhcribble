@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.shhhcribble.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>REPO_PATH/Tools/backup-db.sh</string>
+    </array>
+
+    <!-- Daily. RunAtLoad covers the case launchd cannot: a Mac that was asleep
+         or shut down at the scheduled hour. launchd will also fire a missed
+         StartCalendarInterval job shortly after wake, so between the two a day
+         is rarely skipped entirely. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>13</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- The script exits non-zero on a failed integrity check or a zero-row
+         backup, so these logs are where a silently-broken backup shows up.
+         Check them before trusting the backups exist. -->
+    <key>StandardOutPath</key>
+    <string>/tmp/shhhcribble-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/shhhcribble-backup.err</string>
+</dict>
+</plist>
